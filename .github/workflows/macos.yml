@@ -1,4 +1,7 @@
-name: Build macOS Release
+# This workflow will build a package using Maven and then publish it to GitHub packages when a release is created
+# For more information see: https://github.com/actions/setup-java#apache-maven-with-a-settings-path
+
+name: Build MacOS Release
 
 on:
   workflow_dispatch:
@@ -7,11 +10,13 @@ on:
     branches:
       - master
     paths:
+      # Trigger only when src/** changes
       - ".github/release.info"
       
 jobs:
   build:
-    runs-on: macos-latest
+
+    runs-on: ubuntu-latest
     outputs:
       VERSION_NUMBER: ${{ steps.tag_latest.outputs.value }}
     steps:
@@ -19,11 +24,11 @@ jobs:
       with:
         ref: ${{ github.event.ref }}
         
-    - name: Set up JDK 11
+    - name: Set up JDK 1.8
       uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
-        java-version: '11'
+        java-version: '8'  
      
     - name: Read tag_latest and Save build info
       id: tag_latest
@@ -36,45 +41,18 @@ jobs:
         ./package.sh
         chmod +x .github/scripts/package_launcher.sh
         ./.github/scripts/package_launcher.sh
-
     - name: Test Jar
       env:
         VERSION_NUMBER: ${{ steps.tag_latest.outputs.value }}
       run: |
         chmod +x .github/scripts/test_jar.sh
         ./.github/scripts/test_jar.sh
-
-    - name: Check for JAR file
-      run: |
-        ls -R
-        if [ ! -f "BilibiliDown.jar" ]; then
-          echo "BilibiliDown.jar not found"
-          exit 1
-        fi
-
-    - name: Create macOS App Bundle
+    - name: ZIP files
       env:
         VERSION_NUMBER: ${{ steps.tag_latest.outputs.value }}
       run: |
-        mkdir -p BilibiliDown.app/Contents/MacOS
-        mkdir -p BilibiliDown.app/Contents/Resources
-        # 使用通配符来查找 JAR 文件，以防文件名包含版本号
-        cp BilibiliDown*.jar BilibiliDown.app/Contents/Resources/BilibiliDown.jar
-        echo '#!/bin/bash
-        java -jar "$(/usr/bin/dirname "$0")"/../Resources/BilibiliDown.jar' > BilibiliDown.app/Contents/MacOS/BilibiliDown
-        chmod +x BilibiliDown.app/Contents/MacOS/BilibiliDown
-        
-    - name: Create DMG
-      env:
-        VERSION_NUMBER: ${{ steps.tag_latest.outputs.value }}
-      run: |
-        hdiutil create -volname "BilibiliDown v$VERSION_NUMBER" -srcfolder BilibiliDown.app -ov -format UDZO BilibiliDown.v$VERSION_NUMBER.dmg
-        
-    - name: Generate SHA1
-      env:
-        VERSION_NUMBER: ${{ steps.tag_latest.outputs.value }}
-      run: |
-        shasum -a 1 BilibiliDown.v$VERSION_NUMBER.dmg > BilibiliDown.v$VERSION_NUMBER.dmg.sha1
+        chmod +x .github/scripts/gen_zip_sha1_for_release.sh
+        ./.github/scripts/gen_zip_sha1_for_release.sh
         
     - name: Create Release
       uses: softprops/action-gh-release@v2.0.6
@@ -85,7 +63,91 @@ jobs:
         draft: false
         prerelease: false
         files: |
-          BilibiliDown.v${{steps.tag_latest.outputs.value}}.dmg
-          BilibiliDown.v${{steps.tag_latest.outputs.value}}.dmg.sha1
-
-    # 其他上传步骤可以保留,但需要相应调整文件名
+          BilibiliDown.v${{steps.tag_latest.outputs.value}}.release.zip
+          BilibiliDown.v${{steps.tag_latest.outputs.value}}.release.zip.sha1
+          BilibiliDown.v${{steps.tag_latest.outputs.value}}.win_x64_jre11.release.zip
+          BilibiliDown.v${{steps.tag_latest.outputs.value}}.win_x64_jre11.release.zip.sha1
+          
+    - name: Upload release to supabase
+      env:
+        VERSION_NUMBER: ${{ steps.tag_latest.outputs.value }}
+        SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+      if: ${{ env.SUPABASE_ANON_KEY != ''}}
+      run: |
+        chmod +x .github/scripts/upload_supabase.sh
+        ./.github/scripts/upload_supabase.sh     
+            
+    - name: Upload release to cloudinary
+      env:
+        CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+        CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+        ZIP_FILE_NAME: BilibiliDown.v${{steps.tag_latest.outputs.value}}.release.zip
+        SHA1_FILE_NAME: BilibiliDown.v${{steps.tag_latest.outputs.value}}.release.zip.sha1
+      if: ${{ env.CLOUDINARY_API_KEY != '' && env.CLOUDINARY_API_SECRET != ''}}
+      run: |
+        chmod +x .github/scripts/upload_cloudinary.sh
+        ./.github/scripts/upload_cloudinary.sh              
+    
+    - name: Upload release to bitbucket
+      env:
+        VERSION_NUMBER: ${{ steps.tag_latest.outputs.value }}
+        BITBUCKET_TOKEN: ${{ secrets.BITBUCKET_TOKEN }}
+      if: ${{ env.BITBUCKET_TOKEN != ''}}
+      run: |
+        chmod +x .github/scripts/upload_bitbucket.sh
+        ./.github/scripts/upload_bitbucket.sh                    
+            
+    - name: Sync Push to Gitee
+      env:
+        GITEE_AUTH: ${{ secrets.GITEE_AUTH }}
+      if: ${{ env.GITEE_AUTH != ''}}
+      run: |
+        chmod +x .github/scripts/sync_push_to_gitee.sh
+        ./.github/scripts/sync_push_to_gitee.sh
+        
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: release
+        path: BilibiliDown.v${{steps.tag_latest.outputs.value}}.win_x64_jre11.release.zip
+          
+  # 生成macOS安装包
+  build_macos_pkg:
+    needs: build
+    name: Build macOS pkg
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Download artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: release
+        path: mac_pkg
+        
+    - name: Set up JDK 21
+      uses: actions/setup-java@v4
+      with:
+        java-version: '21'
+        distribution: 'temurin'
+        
+    - name: Build PKG
+      env:
+        VERSION_NUMBER: ${{needs.build.outputs.VERSION_NUMBER}}
+        VERSION_NUMBER_TAIL: 0
+        JAVA_TOOL_OPTIONS: '-Duser.region=CN -Duser.language=zh'
+        PYTHONIOENCODING: utf-8
+      run:  |
+        cd mac_pkg
+        # pip install requests
+        python ../.github/scripts/installer-mac/mac_pkg.py
+        mv target/BilibiliDown-1.${{needs.build.outputs.VERSION_NUMBER}}.0.pkg        target/BilibiliDown.v${{needs.build.outputs.VERSION_NUMBER}}.mac.pkg
+        mv target/BilibiliDown-1.${{needs.build.outputs.VERSION_NUMBER}}.0.pkg.sha1   target/BilibiliDown.v${{needs.build.outputs.VERSION_NUMBER}}.mac.pkg.sha1
+        
+    - name: Upload PKG File to release asset
+      uses: softprops/action-gh-release@v2.0.6
+      with:
+        tag_name: V${{needs.build.outputs.VERSION_NUMBER}}
+        name: BilibiliDown - v${{needs.build.outputs.VERSION_NUMBER}}
+        files: |
+          mac_pkg/target/BilibiliDown.v${{needs.build.outputs.VERSION_NUMBER}}.mac.pkg
+          mac_pkg/target/BilibiliDown.v${{needs.build.outputs.VERSION_NUMBER}}.mac.pkg.sha1
