@@ -1,0 +1,82 @@
+name: Build macOS Release
+
+on:
+  workflow_dispatch:
+    inputs: {}
+  push:
+    branches:
+      - master
+    paths:
+      - ".github/release.info"
+      
+jobs:
+  build:
+    runs-on: macos-latest
+    outputs:
+      VERSION_NUMBER: ${{ steps.tag_latest.outputs.value }}
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.ref }}
+        
+    - name: Set up JDK 1.8
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '8'  
+     
+    - name: Read tag_latest and Save build info
+      id: tag_latest
+      run: |
+        python ./.github/scripts/read_version_and_save_build_info.py
+    
+    - name: Package Jar
+      run: |
+        chmod +x package.sh
+        ./package.sh
+        chmod +x .github/scripts/package_launcher.sh
+        ./.github/scripts/package_launcher.sh
+        
+    - name: Test Jar
+      env:
+        VERSION_NUMBER: ${{ steps.tag_latest.outputs.value }}
+      run: |
+        chmod +x .github/scripts/test_jar.sh
+        ./.github/scripts/test_jar.sh
+        
+    - name: Create macOS App Bundle
+      env:
+        VERSION_NUMBER: ${{ steps.tag_latest.outputs.value }}
+      run: |
+        mkdir -p BilibiliDown.app/Contents/MacOS
+        mkdir -p BilibiliDown.app/Contents/Resources
+        cp BilibiliDown.jar BilibiliDown.app/Contents/Resources/
+        echo '#!/bin/bash
+        java -jar "$(/usr/bin/dirname "$0")"/../Resources/BilibiliDown.jar' > BilibiliDown.app/Contents/MacOS/BilibiliDown
+        chmod +x BilibiliDown.app/Contents/MacOS/BilibiliDown
+        
+    - name: Create DMG
+      env:
+        VERSION_NUMBER: ${{ steps.tag_latest.outputs.value }}
+      run: |
+        hdiutil create -volname "BilibiliDown v$VERSION_NUMBER" -srcfolder BilibiliDown.app -ov -format UDZO BilibiliDown.v$VERSION_NUMBER.dmg
+        
+    - name: Generate SHA1
+      env:
+        VERSION_NUMBER: ${{ steps.tag_latest.outputs.value }}
+      run: |
+        shasum -a 1 BilibiliDown.v$VERSION_NUMBER.dmg > BilibiliDown.v$VERSION_NUMBER.dmg.sha1
+        
+    - name: Create Release
+      uses: softprops/action-gh-release@v2.0.6
+      with:
+        tag_name: V${{steps.tag_latest.outputs.value}}
+        name: BilibiliDown - v${{steps.tag_latest.outputs.value}}
+        body_path: ./.github/release.info
+        draft: false
+        prerelease: false
+        files: |
+          BilibiliDown.v${{steps.tag_latest.outputs.value}}.dmg
+          BilibiliDown.v${{steps.tag_latest.outputs.value}}.dmg.sha1
+
+    # 其他上传步骤可以保留,但需要相应调整文件名
