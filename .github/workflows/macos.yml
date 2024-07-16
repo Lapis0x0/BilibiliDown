@@ -36,21 +36,30 @@ jobs:
         ./package.sh
         chmod +x .github/scripts/package_launcher.sh
         ./.github/scripts/package_launcher.sh
-        
+
     - name: Test Jar
       env:
         VERSION_NUMBER: ${{ steps.tag_latest.outputs.value }}
       run: |
         chmod +x .github/scripts/test_jar.sh
         ./.github/scripts/test_jar.sh
-        
+
+    - name: Check for JAR file
+      run: |
+        ls -R
+        if [ ! -f "BilibiliDown.jar" ]; then
+          echo "BilibiliDown.jar not found"
+          exit 1
+        fi
+
     - name: Create macOS App Bundle
       env:
         VERSION_NUMBER: ${{ steps.tag_latest.outputs.value }}
       run: |
         mkdir -p BilibiliDown.app/Contents/MacOS
         mkdir -p BilibiliDown.app/Contents/Resources
-        cp BilibiliDown.jar BilibiliDown.app/Contents/Resources/
+        # 使用通配符来查找 JAR 文件，以防文件名包含版本号
+        cp BilibiliDown*.jar BilibiliDown.app/Contents/Resources/BilibiliDown.jar
         echo '#!/bin/bash
         java -jar "$(/usr/bin/dirname "$0")"/../Resources/BilibiliDown.jar' > BilibiliDown.app/Contents/MacOS/BilibiliDown
         chmod +x BilibiliDown.app/Contents/MacOS/BilibiliDown
