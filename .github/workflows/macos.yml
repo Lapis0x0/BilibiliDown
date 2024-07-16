@@ -129,7 +129,10 @@ jobs:
       with:
         java-version: '21'
         distribution: 'temurin'
-        
+    
+    - name: List files in mac_pkg directory
+      run: ls -al mac_pkg
+    
     - name: Build PKG
       env:
         VERSION_NUMBER: ${{needs.build.outputs.VERSION_NUMBER}}
