@@ -1,7 +1,7 @@
 # This workflow will build a package using Maven and then publish it to GitHub packages when a release is created
 # For more information see: https://github.com/actions/setup-java#apache-maven-with-a-settings-path
 
-name: Build MacOS Release
+name: Build Release for macOS
 
 on:
   workflow_dispatch:
@@ -16,7 +16,7 @@ on:
 jobs:
   build:
 
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     outputs:
       VERSION_NUMBER: ${{ steps.tag_latest.outputs.value }}
     steps:
@@ -65,8 +65,8 @@ jobs:
         files: |
           BilibiliDown.v${{steps.tag_latest.outputs.value}}.release.zip
           BilibiliDown.v${{steps.tag_latest.outputs.value}}.release.zip.sha1
-          BilibiliDown.v${{steps.tag_latest.outputs.value}}.win_x64_jre11.release.zip
-          BilibiliDown.v${{steps.tag_latest.outputs.value}}.win_x64_jre11.release.zip.sha1
+          BilibiliDown.v${{steps.tag_latest.outputs.value}}.macos_x64_jre11.release.zip
+          BilibiliDown.v${{steps.tag_latest.outputs.value}}.macos_x64_jre11.release.zip.sha1
           
     - name: Upload release to supabase
       env:
@@ -109,9 +109,9 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: release
-        path: BilibiliDown.v${{steps.tag_latest.outputs.value}}.win_x64_jre11.release.zip
+        path: BilibiliDown.v${{steps.tag_latest.outputs.value}}.macos_x64_jre11.release.zip
           
-  # 生成macOS安装包
+  # 生成macOS 安装包
   build_macos_pkg:
     needs: build
     name: Build macOS pkg
@@ -122,29 +122,24 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: release
-        path: mac_pkg
+        path: macos_pkg
         
     - name: Set up JDK 21
       uses: actions/setup-java@v4
       with:
         java-version: '21'
         distribution: 'temurin'
-    
-    - name: List files in mac_pkg directory
-      run: ls -al mac_pkg
-    
+        
     - name: Build PKG
       env:
         VERSION_NUMBER: ${{needs.build.outputs.VERSION_NUMBER}}
         VERSION_NUMBER_TAIL: 0
-        JAVA_TOOL_OPTIONS: '-Duser.region=CN -Duser.language=zh'
-        PYTHONIOENCODING: utf-8
       run:  |
-        cd mac_pkg
+        cd macos_pkg
         # pip install requests
-        python ../.github/scripts/installer-mac/mac_pkg.py
-        mv target/BilibiliDown-1.${{needs.build.outputs.VERSION_NUMBER}}.0.pkg        target/BilibiliDown.v${{needs.build.outputs.VERSION_NUMBER}}.mac.pkg
-        mv target/BilibiliDown-1.${{needs.build.outputs.VERSION_NUMBER}}.0.pkg.sha1   target/BilibiliDown.v${{needs.build.outputs.VERSION_NUMBER}}.mac.pkg.sha1
+        python ../.github/scripts/installer-macos/macos_pkg.py
+        mv target/BilibiliDown-1.${{needs.build.outputs.VERSION_NUMBER}}.0.pkg target/BilibiliDown.v${{needs.build.outputs.VERSION_NUMBER}}.macos_x64.pkg
+        mv target/BilibiliDown-1.${{needs.build.outputs.VERSION_NUMBER}}.0.pkg.sha1 target/BilibiliDown.v${{needs.build.outputs.VERSION_NUMBER}}.macos_x64.pkg.sha1
         
     - name: Upload PKG File to release asset
       uses: softprops/action-gh-release@v2.0.6
@@ -152,5 +147,5 @@ jobs:
         tag_name: V${{needs.build.outputs.VERSION_NUMBER}}
         name: BilibiliDown - v${{needs.build.outputs.VERSION_NUMBER}}
         files: |
-          mac_pkg/target/BilibiliDown.v${{needs.build.outputs.VERSION_NUMBER}}.mac.pkg
-          mac_pkg/target/BilibiliDown.v${{needs.build.outputs.VERSION_NUMBER}}.mac.pkg.sha1
+          macos_pkg/target/BilibiliDown.v${{needs.build.outputs.VERSION_NUMBER}}.macos_x64.pkg
+          macos_pkg/target/BilibiliDown.v${{needs.build.outputs.VERSION_NUMBER}}.macos_x64.pkg.sha1
